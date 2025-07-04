@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FHIR Server Data Quality Assessment</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🏥 FHIR Server Data Quality Assessment</h1>
+            <p class="subtitle">Instantly check the quality of any FHIR server's data</p>
+        </header>
+
+        <section class="server-input">
+            <h2>Test a FHIR Server</h2>
+            <div class="input-group">
+                <input type="url" id="serverUrl" placeholder="https://hapi.fhir.org/baseR4" value="https://hapi.fhir.org/baseR4">
+                <button onclick="assessServer()" id="assessBtn">Assess Data Quality</button>
+            </div>
+            <div class="quick-servers">
+                <label>Quick test:</label>
+                <button class="server-btn" onclick="setServer('https://hapi.fhir.org/baseR4')">HAPI Test</button>
+                <button class="server-btn" onclick="setServer('https://server.fire.ly')">Firely</button>
+                <button class="server-btn" onclick="setServer('https://r4.smarthealthit.org')">SMART Health IT</button>
+            </div>
+        </section>
+
+        <section id="results" class="results hidden">
+            <h2>Assessment Results</h2>
+            <div class="overall-score">
+                <div class="score-circle">
+                    <span id="overallScore">--</span>
+                </div>
+                <div class="score-label">
+                    <h3 id="scoreLabel">Assessing...</h3>
+                    <p id="scoreDescription"></p>
+                </div>
+            </div>
+
+            <div class="resource-grid" id="resourceGrid">
+                <!-- Resource assessments will be inserted here -->
+            </div>
+
+            <div class="issues-section hidden" id="issuesSection">
+                <h3>🚨 Data Quality Issues</h3>
+                <ul id="issuesList"></ul>
+            </div>
+
+            <div class="raw-data">
+                <details>
+                    <summary>View Raw Assessment Data</summary>
+                    <pre id="rawData"></pre>
+                </details>
+            </div>
+        </section>
+
+        <section class="comparison hidden" id="comparison">
+            <h2>Server Comparison</h2>
+            <div id="comparisonChart"></div>
+        </section>
+
+        <footer>
+            <p>Built with ❤️ for the healthcare AI community | 
+               <a href="https://github.com/jcafazzo/fhir-mcp" target="_blank">View on GitHub</a> | 
+               <a href="https://github.com/jcafazzo/fhir-mcp-web" target="_blank">Web Demo Source</a>
+            </p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

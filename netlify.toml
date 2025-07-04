@@ -1,0 +1,24 @@
+# Netlify configuration for FHIR MCP Web Demo
+
+[build]
+  publish = "."
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Methods = "GET, POST, OPTIONS"
+    Access-Control-Allow-Headers = "Accept, Content-Type"
+
+# Redirect root to index.html
+[[redirects]]
+  from = "/"
+  to = "/index.html"
+  status = 200
+
+# API proxy to avoid CORS issues (optional - for servers that don't support CORS)
+[[redirects]]
+  from = "/proxy/*"
+  to = ":splat"
+  status = 200
+  force = true
