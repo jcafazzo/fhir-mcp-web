@@ -23,6 +23,12 @@ class FHIRChatBot {
             if (patientId) {
                 return await this.getPatient(patientId);
             }
+            // If no ID found, try searching by name
+            const nameMatch = query.match(/(?:show|get)\s+patient\s+['""]?([a-zA-Z\s]+)['""]?/i);
+            if (nameMatch) {
+                const name = nameMatch[1].trim();
+                return await this.searchPatientsByName(name);
+            }
         }
         
         // Check for medication queries with patient ID
@@ -117,14 +123,8 @@ Or try queries like:
                 const targetUrl = new URL(`${this.currentServer}/${endpoint}`);
                 Object.keys(params).forEach(key => targetUrl.searchParams.append(key, params[key]));
                 
-                // Try multiple CORS proxy services
-                const corsProxies = [
-                    'https://api.allorigins.win/raw?url=',
-                    'https://corsproxy.io/?',
-                    'https://cors-anywhere.herokuapp.com/'
-                ];
-                
-                requestUrl = `${corsProxies[0]}${encodeURIComponent(targetUrl.toString())}`;
+                // Use a more reliable CORS proxy
+                requestUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl.toString())}`;
             } else {
                 // Direct request for production/Netlify
                 requestUrl = new URL(`${this.currentServer}/${endpoint}`);
@@ -854,6 +854,64 @@ Or try queries like:
             };
         }
     }
+
+    async searchPatientsByName(name) {
+        try {
+            // Try different search parameters for name
+            const searchParams = [
+                { name: name, _count: 20 },
+                { family: name, _count: 20 },
+                { given: name, _count: 20 }
+            ];
+            
+            let allPatients = [];
+            
+            for (const params of searchParams) {
+                try {
+                    const bundle = await this.makeRequest('Patient', params);
+                    if (bundle.entry) {
+                        allPatients.push(...bundle.entry);
+                    }
+                } catch (error) {
+                    // Continue with next search parameter if one fails
+                    console.log(`Search with ${JSON.stringify(params)} failed:`, error);
+                }
+            }
+            
+            // Remove duplicates based on patient ID
+            const uniquePatients = allPatients.filter((patient, index, self) => 
+                index === self.findIndex(p => p.resource.id === patient.resource.id)
+            );
+            
+            if (uniquePatients.length === 0) {
+                return {
+                    type: 'warning',
+                    content: `No patients found with name "${name}". Try searching for "all patients" to see available names.`
+                };
+            }
+            
+            let content = `Found ${uniquePatients.length} patient(s) matching "${name}":\\n\\n`;
+            
+            uniquePatients.forEach(entry => {
+                const patient = entry.resource;
+                const fullName = this.formatName(patient.name);
+                content += `**${fullName}**\\n`;
+                content += `- ID: ${patient.id}\\n`;
+                content += `- Gender: ${patient.gender || 'Unknown'}\\n`;
+                content += `- Birth Date: ${patient.birthDate || 'Unknown'}\\n\\n`;
+            });
+            
+            return {
+                type: 'success',
+                content: content
+            };
+        } catch (error) {
+            return {
+                type: 'error',
+                content: `Failed to search patients by name: ${error.message}`
+            };
+        }
+    }
 }
 
 // UI Management
@@ -957,7 +1015,7 @@ document.getElementById('serverUrl').addEventListener('change', function() {
     
     let testUrl = `${this.value}/metadata`;
     if (isLocalhost) {
-        testUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(testUrl)}`;
+        testUrl = `https://corsproxy.io/?${encodeURIComponent(testUrl)}`;
     }
     
     fetch(testUrl, {
