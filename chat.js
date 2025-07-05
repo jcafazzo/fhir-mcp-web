@@ -110,45 +110,72 @@ Or try queries like:
     }
 
     async makeRequest(endpoint, params = {}) {
-        try {
-            let requestUrl;
+        const targetUrl = new URL(`${this.currentServer}/${endpoint}`);
+        Object.keys(params).forEach(key => targetUrl.searchParams.append(key, params[key]));
+        
+        // Check if we're running locally and need CORS proxy
+        const isLocalhost = window.location.hostname === 'localhost' || 
+                           window.location.hostname === '127.0.0.1' ||
+                           window.location.hostname === '';
+        
+        if (isLocalhost) {
+            // Try multiple CORS proxies in order
+            const corsProxies = [
+                (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+                (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+                (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+                (url) => url // Direct attempt as last resort
+            ];
             
-            // Check if we're running locally and need CORS proxy
-            const isLocalhost = window.location.hostname === 'localhost' || 
-                               window.location.hostname === '127.0.0.1' ||
-                               window.location.hostname === '';
-            
-            if (isLocalhost) {
-                // Use CORS proxy for local development
-                const targetUrl = new URL(`${this.currentServer}/${endpoint}`);
-                Object.keys(params).forEach(key => targetUrl.searchParams.append(key, params[key]));
+            for (let i = 0; i < corsProxies.length; i++) {
+                const proxyFunc = corsProxies[i];
+                const requestUrl = proxyFunc(targetUrl.toString());
                 
-                // Use a more reliable CORS proxy
-                requestUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl.toString())}`;
-            } else {
-                // Direct request for production/Netlify
-                requestUrl = new URL(`${this.currentServer}/${endpoint}`);
-                Object.keys(params).forEach(key => requestUrl.searchParams.append(key, params[key]));
-            }
-            
-            const response = await fetch(requestUrl, {
-                headers: {
-                    'Accept': 'application/fhir+json',
-                    ...(isLocalhost && { 'X-Requested-With': 'XMLHttpRequest' })
+                try {
+                    console.log(`Trying proxy ${i + 1}/${corsProxies.length}: ${requestUrl}`);
+                    
+                    const response = await fetch(requestUrl, {
+                        headers: {
+                            'Accept': 'application/fhir+json',
+                            ...(i < corsProxies.length - 1 && { 'X-Requested-With': 'XMLHttpRequest' })
+                        }
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+                    
+                    const data = await response.json();
+                    console.log(`Success with proxy ${i + 1}`);
+                    return data;
+                    
+                } catch (error) {
+                    console.log(`Proxy ${i + 1} failed:`, error.message);
+                    
+                    // If this is the last proxy, throw the error
+                    if (i === corsProxies.length - 1) {
+                        throw new Error(`All CORS proxies failed. Last error: ${error.message}. Try switching to a different FHIR server or running the demo on a hosted server.`);
+                    }
+                    // Otherwise, continue to next proxy
                 }
-            });
-            
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
-            
-            return await response.json();
-        } catch (error) {
-            // Enhanced error handling for CORS issues
-            if (error.message.includes('CORS') || error.message.includes('fetch')) {
-                throw new Error(`CORS error - try switching to a different FHIR server or check the console for details`);
+        } else {
+            // Direct request for production/Netlify
+            try {
+                const response = await fetch(targetUrl, {
+                    headers: {
+                        'Accept': 'application/fhir+json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                return await response.json();
+            } catch (error) {
+                throw error;
             }
-            throw error;
         }
     }
 
@@ -1004,31 +1031,19 @@ window.addEventListener('DOMContentLoaded', function() {
 });
 
 // Update server status when changed
-document.getElementById('serverUrl').addEventListener('change', function() {
+document.getElementById('serverUrl').addEventListener('change', async function() {
     const status = document.getElementById('serverStatus');
     status.textContent = '🟡 Connecting...';
     
-    // Test connection with CORS proxy if local
-    const isLocalhost = window.location.hostname === 'localhost' || 
-                       window.location.hostname === '127.0.0.1' ||
-                       window.location.hostname === '';
+    // Update chatBot's server
+    chatBot.currentServer = this.value;
     
-    let testUrl = `${this.value}/metadata`;
-    if (isLocalhost) {
-        testUrl = `https://corsproxy.io/?${encodeURIComponent(testUrl)}`;
-    }
-    
-    fetch(testUrl, {
-        headers: { 'Accept': 'application/fhir+json' }
-    })
-    .then(response => {
-        if (response.ok) {
-            status.textContent = '🟢 Connected';
-        } else {
-            status.textContent = '🔴 Connection failed';
-        }
-    })
-    .catch(() => {
+    // Test connection using the same proxy system as makeRequest
+    try {
+        await chatBot.makeRequest('metadata');
+        status.textContent = '🟢 Connected';
+    } catch (error) {
+        console.log('Connection test failed:', error.message);
         status.textContent = '🔴 Connection failed';
-    });
+    }
 });
