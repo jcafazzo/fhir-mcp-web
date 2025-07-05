@@ -25,6 +25,16 @@ class FHIRChatBot {
             }
         }
         
+        // Check for medication queries with patient ID
+        if ((lowerQuery.includes('med') || lowerQuery.includes('prescription') || lowerQuery.includes('drug')) && 
+            (lowerQuery.includes('for') || lowerQuery.includes('patient'))) {
+            const patientId = this.extractPatientId(query);
+            if (patientId) {
+                return await this.getMedicationsForPatient(patientId);
+            }
+            return await this.getMedications(query);
+        }
+        
         if (lowerQuery.includes('observation') || lowerQuery.includes('lab') || lowerQuery.includes('vital')) {
             return await this.getObservations(query);
         }
@@ -51,20 +61,24 @@ class FHIRChatBot {
             content: `I'm not sure how to process that query. Try asking about:
 - Patients (e.g., "Show all patients")
 - Conditions (e.g., "Find patients with diabetes")
-- Medications (e.g., "Show active medications")
+- Medications (e.g., "Show meds for patient e312f2f5-689d-47f9-b4dd-f6f12417322f")
 - Observations (e.g., "Recent lab results")
 - Data quality (e.g., "Check data quality")`
         };
     }
 
     extractPatientId(query) {
-        // Look for UUID pattern
+        // Look for UUID pattern (most common in FHIR)
         const uuidMatch = query.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
         if (uuidMatch) return uuidMatch[0];
         
-        // Look for simple numeric ID
-        const idMatch = query.match(/patient\s+(\d+)/i);
+        // Look for patterns like "patient 123" or "for 123"
+        const idMatch = query.match(/(?:patient|for|id)\s+([a-z0-9\-]+)/i);
         if (idMatch) return idMatch[1];
+        
+        // Look for any alphanumeric ID that might be a patient ID
+        const alphanumericMatch = query.match(/\b([a-z0-9]{8,})\b/i);
+        if (alphanumericMatch) return alphanumericMatch[1];
         
         return null;
     }
@@ -352,6 +366,55 @@ class FHIRChatBot {
             return {
                 type: 'error',
                 content: `Failed to fetch observations: ${error.message}`
+            };
+        }
+    }
+
+    async getMedicationsForPatient(patientId) {
+        try {
+            const params = { patient: patientId, _count: 20 };
+            
+            const bundle = await this.makeRequest('MedicationRequest', params);
+            
+            if (!bundle.entry || bundle.entry.length === 0) {
+                return {
+                    type: 'warning',
+                    content: `No medications found for patient ${patientId}.`
+                };
+            }
+            
+            let content = `**Medications for Patient ${patientId}**\\n\\n`;
+            content += `Found ${bundle.total || bundle.entry.length} medication requests:\\n\\n`;
+            
+            bundle.entry.forEach(entry => {
+                const med = entry.resource;
+                const medText = this.getCodeText(med.medicationCodeableConcept);
+                const date = med.authoredOn ? new Date(med.authoredOn).toLocaleDateString() : 'Unknown date';
+                
+                content += `💊 **${medText}**\\n`;
+                content += `- Status: ${med.status}\\n`;
+                content += `- Intent: ${med.intent}\\n`;
+                content += `- Prescribed: ${date}\\n`;
+                
+                // Add dosage information if available
+                if (med.dosageInstruction && med.dosageInstruction.length > 0) {
+                    const dosage = med.dosageInstruction[0];
+                    if (dosage.text) {
+                        content += `- Dosage: ${dosage.text}\\n`;
+                    }
+                }
+                
+                content += `\\n`;
+            });
+            
+            return {
+                type: 'success',
+                content: content
+            };
+        } catch (error) {
+            return {
+                type: 'error',
+                content: `Failed to fetch medications for patient ${patientId}: ${error.message}`
             };
         }
     }
