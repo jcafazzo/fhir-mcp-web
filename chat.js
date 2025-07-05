@@ -55,15 +55,35 @@ class FHIRChatBot {
             return await this.getCarePlans(query);
         }
         
-        // Default response
+        // Check for date-based patient searches
+        if (lowerQuery.includes('born') || lowerQuery.includes('birth')) {
+            return await this.searchPatientsByDate(query);
+        }
+        
+        // Check for gender-based searches
+        if ((lowerQuery.includes('male') || lowerQuery.includes('female')) && lowerQuery.includes('patient')) {
+            return await this.searchPatientsByGender(query);
+        }
+        
+        // Check for age-based searches
+        if (lowerQuery.includes('age') || lowerQuery.includes('years old')) {
+            return await this.searchPatientsByAge(query);
+        }
+        
+        // Default response with better examples
         return {
             type: 'info',
             content: `I'm not sure how to process that query. Try asking about:
-- Patients (e.g., "Show all patients")
-- Conditions (e.g., "Find patients with diabetes")
-- Medications (e.g., "Show meds for patient e312f2f5-689d-47f9-b4dd-f6f12417322f")
-- Observations (e.g., "Recent lab results")
-- Data quality (e.g., "Check data quality")`
+- **Patients**: "Show all patients", "Find patients born in 1967", "Show male patients"
+- **Conditions**: "Find patients with diabetes"
+- **Medications**: "Show meds for patient e312f2f5-689d-47f9-b4dd-f6f12417322f"
+- **Observations**: "Recent lab results", "Show observations for patient 123"
+- **Data Quality**: "Check data quality"
+
+Or try queries like:
+- "Find patients that were born in the latter half of 1967"
+- "Show female patients"
+- "Get conditions for patient [ID]"`
         };
     }
 
@@ -664,6 +684,175 @@ class FHIRChatBot {
             return this.getCodeText(obs.valueCodeableConcept);
         }
         return 'No value recorded';
+    }
+
+    async searchPatientsByDate(query) {
+        try {
+            const lowerQuery = query.toLowerCase();
+            let params = { _count: 20 };
+            
+            // Extract year from query
+            const yearMatch = query.match(/\b(19|20)\d{2}\b/);
+            if (yearMatch) {
+                const year = yearMatch[0];
+                
+                // Check for specific date ranges
+                if (lowerQuery.includes('latter half') || lowerQuery.includes('second half')) {
+                    params.birthdate = `ge${year}-07-01`;
+                    params['birthdate:le'] = `${year}-12-31`;
+                } else if (lowerQuery.includes('first half') || lowerQuery.includes('early')) {
+                    params.birthdate = `ge${year}-01-01`;
+                    params['birthdate:le'] = `${year}-06-30`;
+                } else {
+                    // Entire year
+                    params.birthdate = `ge${year}-01-01`;
+                    params['birthdate:le'] = `${year}-12-31`;
+                }
+            }
+            
+            const bundle = await this.makeRequest('Patient', params);
+            
+            if (!bundle.entry || bundle.entry.length === 0) {
+                return {
+                    type: 'warning',
+                    content: `No patients found matching that birth date criteria. This might be due to how the FHIR server handles date searches.`
+                };
+            }
+            
+            let content = `Found ${bundle.total || bundle.entry.length} patients matching your birth date criteria:\\n\\n`;
+            
+            bundle.entry.forEach(entry => {
+                const patient = entry.resource;
+                const name = this.formatName(patient.name);
+                content += `**${name}**\\n`;
+                content += `- ID: ${patient.id}\\n`;
+                content += `- Gender: ${patient.gender || 'Unknown'}\\n`;
+                content += `- Birth Date: ${patient.birthDate || 'Unknown'}\\n\\n`;
+            });
+            
+            return {
+                type: 'success',
+                content: content
+            };
+        } catch (error) {
+            return {
+                type: 'error',
+                content: `Failed to search patients by birth date: ${error.message}. Note: Some FHIR servers may not support advanced date searches.`
+            };
+        }
+    }
+
+    async searchPatientsByGender(query) {
+        try {
+            const lowerQuery = query.toLowerCase();
+            let gender = '';
+            
+            if (lowerQuery.includes('male') && !lowerQuery.includes('female')) {
+                gender = 'male';
+            } else if (lowerQuery.includes('female')) {
+                gender = 'female';
+            }
+            
+            const params = { gender: gender, _count: 20 };
+            const bundle = await this.makeRequest('Patient', params);
+            
+            if (!bundle.entry || bundle.entry.length === 0) {
+                return {
+                    type: 'warning',
+                    content: `No ${gender} patients found.`
+                };
+            }
+            
+            let content = `Found ${bundle.total || bundle.entry.length} ${gender} patients:\\n\\n`;
+            
+            bundle.entry.slice(0, 10).forEach(entry => {
+                const patient = entry.resource;
+                const name = this.formatName(patient.name);
+                content += `**${name}**\\n`;
+                content += `- ID: ${patient.id}\\n`;
+                content += `- Birth Date: ${patient.birthDate || 'Unknown'}\\n\\n`;
+            });
+            
+            if (bundle.entry.length > 10) {
+                content += `\\n...and ${bundle.entry.length - 10} more patients.`;
+            }
+            
+            return {
+                type: 'success',
+                content: content
+            };
+        } catch (error) {
+            return {
+                type: 'error',
+                content: `Failed to search patients by gender: ${error.message}`
+            };
+        }
+    }
+
+    async searchPatientsByAge(query) {
+        try {
+            // Extract age from query
+            const ageMatch = query.match(/(\d+)\s*(?:years?\s*old|age)/i);
+            if (!ageMatch) {
+                return {
+                    type: 'warning',
+                    content: 'Please specify an age (e.g., "25 years old" or "age 30")'
+                };
+            }
+            
+            const age = parseInt(ageMatch[1]);
+            const currentYear = new Date().getFullYear();
+            const birthYear = currentYear - age;
+            
+            // Search for patients born in that year (approximate age)
+            const params = { 
+                birthdate: `ge${birthYear}-01-01`,
+                'birthdate:le': `${birthYear}-12-31`,
+                _count: 20 
+            };
+            
+            const bundle = await this.makeRequest('Patient', params);
+            
+            if (!bundle.entry || bundle.entry.length === 0) {
+                return {
+                    type: 'warning',
+                    content: `No patients found around age ${age}.`
+                };
+            }
+            
+            let content = `Found ${bundle.total || bundle.entry.length} patients around age ${age} (born in ${birthYear}):\\n\\n`;
+            
+            bundle.entry.forEach(entry => {
+                const patient = entry.resource;
+                const name = this.formatName(patient.name);
+                const birthDate = patient.birthDate;
+                let calculatedAge = '';
+                
+                if (birthDate) {
+                    const birth = new Date(birthDate);
+                    const ageDiff = Date.now() - birth.getTime();
+                    const ageDate = new Date(ageDiff);
+                    calculatedAge = Math.abs(ageDate.getUTCFullYear() - 1970);
+                }
+                
+                content += `**${name}**\\n`;
+                content += `- ID: ${patient.id}\\n`;
+                content += `- Birth Date: ${birthDate || 'Unknown'}`;
+                if (calculatedAge) content += ` (age ${calculatedAge})`;
+                content += `\\n`;
+                content += `- Gender: ${patient.gender || 'Unknown'}\\n\\n`;
+            });
+            
+            return {
+                type: 'success',
+                content: content
+            };
+        } catch (error) {
+            return {
+                type: 'error',
+                content: `Failed to search patients by age: ${error.message}`
+            };
+        }
     }
 }
 
