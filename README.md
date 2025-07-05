@@ -1,18 +1,19 @@
-# FHIR Server Data Quality Assessment - Web Demo
+# Chat with FHIR Servers - Web Demo
 
-A web-based demonstration of the FHIR MCP Server's data quality assessment capabilities. Test any FHIR server instantly from your browser!
+A natural language chat interface for querying FHIR servers. Ask questions about patients, conditions, medications, and more - just like chatting with an AI assistant!
 
 ## 🚀 Live Demo
 
 Visit: [Your Netlify URL will go here]
 
-## 🎯 Features
+## 💬 Features
 
-- **Instant Assessment**: Check any FHIR server's data quality in seconds
-- **Quality Scoring**: 0-100 scoring algorithm based on data integrity
-- **Issue Detection**: Identifies orphaned references and data problems
-- **Resource Analysis**: Tests Patient, Observation, Condition, and MedicationRequest resources
-- **Visual Results**: Color-coded scores and detailed issue reporting
+- **Natural Language Queries**: Ask questions in plain English
+- **Multi-Server Support**: Switch between HAPI, Firely, and SMART servers
+- **Comprehensive Data Access**: Query patients, conditions, medications, observations, and care plans
+- **Data Quality Checks**: Assess server data quality with a simple command
+- **Smart Suggestions**: Quick-access buttons for common queries
+- **Real-time Results**: Instant responses with formatted healthcare data
 
 ## 🛠️ Deployment
 
@@ -45,12 +46,21 @@ Some FHIR servers may have CORS restrictions. The demo works best with:
 
 For servers with CORS issues, consider using the proxy feature in `netlify.toml`.
 
-## 📊 How It Works
+## 💡 Example Queries
 
-1. **Resource Testing**: Checks accessibility of key FHIR resources
-2. **Data Validation**: Validates FHIR bundle structure and content
-3. **Orphan Detection**: Identifies clinical data without patient records
-4. **Quality Scoring**: Calculates score based on issues found
+- **"Show me all patients"** - Lists patients with demographics
+- **"Find patients with diabetes"** - Searches for patients with specific conditions
+- **"Get patient 87a339d0-8cae-418e-89c7-8651e6aab3c6"** - Retrieves specific patient details
+- **"Show recent observations"** - Displays recent lab results and vitals
+- **"Find medications for patient 123"** - Lists prescriptions for a patient
+- **"Check data quality"** - Assesses the FHIR server's data integrity
+
+## 🔧 How It Works
+
+1. **Natural Language Processing**: Interprets your questions to determine intent
+2. **FHIR API Calls**: Makes appropriate FHIR queries based on your request
+3. **Data Formatting**: Presents results in an easy-to-read chat format
+4. **Error Handling**: Gracefully handles missing data and server issues
 
 ## 🔗 Related Projects
 

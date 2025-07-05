@@ -3,72 +3,68 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FHIR Server Data Quality Assessment</title>
-    <link rel="stylesheet" href="style.css">
+    <title>Chat with FHIR Servers</title>
+    <link rel="stylesheet" href="chat-style.css">
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>🏥 FHIR Server Data Quality Assessment</h1>
-            <p class="subtitle">Instantly check the quality of any FHIR server's data</p>
+            <h1>💬 Chat with FHIR Servers</h1>
+            <p class="subtitle">Query healthcare data using natural language</p>
         </header>
 
-        <section class="server-input">
-            <h2>Test a FHIR Server</h2>
-            <div class="input-group">
-                <input type="url" id="serverUrl" placeholder="https://hapi.fhir.org/baseR4" value="https://hapi.fhir.org/baseR4">
-                <button onclick="assessServer()" id="assessBtn">Assess Data Quality</button>
-            </div>
-            <div class="quick-servers">
-                <label>Quick test:</label>
-                <button class="server-btn" onclick="setServer('https://hapi.fhir.org/baseR4')">HAPI Test</button>
-                <button class="server-btn" onclick="setServer('https://server.fire.ly')">Firely</button>
-                <button class="server-btn" onclick="setServer('https://r4.smarthealthit.org')">SMART Health IT</button>
+        <section class="server-config">
+            <div class="server-select">
+                <label>FHIR Server:</label>
+                <select id="serverUrl">
+                    <option value="https://hapi.fhir.org/baseR4">HAPI Test Server</option>
+                    <option value="https://server.fire.ly">Firely Server</option>
+                    <option value="https://r4.smarthealthit.org" selected>SMART Health IT</option>
+                </select>
+                <span class="server-status" id="serverStatus">🟢 Connected</span>
             </div>
         </section>
 
-        <section id="results" class="results hidden">
-            <h2>Assessment Results</h2>
-            <div class="overall-score">
-                <div class="score-circle">
-                    <span id="overallScore">--</span>
+        <section class="chat-container">
+            <div class="chat-messages" id="chatMessages">
+                <div class="message assistant">
+                    <div class="message-header">🤖 FHIR Assistant</div>
+                    <div class="message-content">
+                        Hi! I can help you query FHIR servers. Try asking me things like:
+                        <ul>
+                            <li>"Show me all patients"</li>
+                            <li>"Find patients with diabetes"</li>
+                            <li>"Get patient 87a339d0-8cae-418e-89c7-8651e6aab3c6"</li>
+                            <li>"Show me recent observations"</li>
+                            <li>"Find medications for patient X"</li>
+                            <li>"Check the data quality of this server"</li>
+                        </ul>
+                    </div>
                 </div>
-                <div class="score-label">
-                    <h3 id="scoreLabel">Assessing...</h3>
-                    <p id="scoreDescription"></p>
+            </div>
+
+            <div class="chat-input-container">
+                <div class="suggested-queries">
+                    <button class="suggestion" onclick="sendSuggestion('Show me all patients')">Show patients</button>
+                    <button class="suggestion" onclick="sendSuggestion('Find patients with diabetes')">Diabetes patients</button>
+                    <button class="suggestion" onclick="sendSuggestion('Check data quality')">Data quality</button>
+                    <button class="suggestion" onclick="sendSuggestion('Show recent observations')">Recent labs</button>
+                </div>
+                <div class="chat-input">
+                    <input type="text" id="userInput" placeholder="Ask me about patients, conditions, medications..." onkeypress="handleKeyPress(event)">
+                    <button onclick="sendMessage()" id="sendBtn">Send</button>
                 </div>
             </div>
-
-            <div class="resource-grid" id="resourceGrid">
-                <!-- Resource assessments will be inserted here -->
-            </div>
-
-            <div class="issues-section hidden" id="issuesSection">
-                <h3>🚨 Data Quality Issues</h3>
-                <ul id="issuesList"></ul>
-            </div>
-
-            <div class="raw-data">
-                <details>
-                    <summary>View Raw Assessment Data</summary>
-                    <pre id="rawData"></pre>
-                </details>
-            </div>
-        </section>
-
-        <section class="comparison hidden" id="comparison">
-            <h2>Server Comparison</h2>
-            <div id="comparisonChart"></div>
         </section>
 
         <footer>
-            <p>Built with ❤️ for the healthcare AI community | 
-               <a href="https://github.com/jcafazzo/fhir-mcp" target="_blank">View on GitHub</a> | 
-               <a href="https://github.com/jcafazzo/fhir-mcp-web" target="_blank">Web Demo Source</a>
+            <p>Powered by FHIR MCP technology | 
+               <a href="https://github.com/jcafazzo/fhir-mcp" target="_blank">GitHub</a> | 
+               Built with Claude Code
             </p>
         </footer>
     </div>
 
-    <script src="app.js"></script>
+    <script src="chat.js"></script>
 </body>
 </html>
