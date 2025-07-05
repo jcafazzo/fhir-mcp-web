@@ -71,12 +71,36 @@ class FHIRChatBot {
 
     async makeRequest(endpoint, params = {}) {
         try {
-            const url = new URL(`${this.currentServer}/${endpoint}`);
-            Object.keys(params).forEach(key => url.searchParams.append(key, params[key]));
+            let requestUrl;
             
-            const response = await fetch(url, {
+            // Check if we're running locally and need CORS proxy
+            const isLocalhost = window.location.hostname === 'localhost' || 
+                               window.location.hostname === '127.0.0.1' ||
+                               window.location.hostname === '';
+            
+            if (isLocalhost) {
+                // Use CORS proxy for local development
+                const targetUrl = new URL(`${this.currentServer}/${endpoint}`);
+                Object.keys(params).forEach(key => targetUrl.searchParams.append(key, params[key]));
+                
+                // Try multiple CORS proxy services
+                const corsProxies = [
+                    'https://api.allorigins.win/raw?url=',
+                    'https://corsproxy.io/?',
+                    'https://cors-anywhere.herokuapp.com/'
+                ];
+                
+                requestUrl = `${corsProxies[0]}${encodeURIComponent(targetUrl.toString())}`;
+            } else {
+                // Direct request for production/Netlify
+                requestUrl = new URL(`${this.currentServer}/${endpoint}`);
+                Object.keys(params).forEach(key => requestUrl.searchParams.append(key, params[key]));
+            }
+            
+            const response = await fetch(requestUrl, {
                 headers: {
-                    'Accept': 'application/fhir+json'
+                    'Accept': 'application/fhir+json',
+                    ...(isLocalhost && { 'X-Requested-With': 'XMLHttpRequest' })
                 }
             });
             
@@ -86,6 +110,10 @@ class FHIRChatBot {
             
             return await response.json();
         } catch (error) {
+            // Enhanced error handling for CORS issues
+            if (error.message.includes('CORS') || error.message.includes('fetch')) {
+                throw new Error(`CORS error - try switching to a different FHIR server or check the console for details`);
+            }
             throw error;
         }
     }
@@ -654,13 +682,33 @@ function handleKeyPress(event) {
     }
 }
 
+// Show local development notice if running locally
+window.addEventListener('DOMContentLoaded', function() {
+    const isLocalhost = window.location.hostname === 'localhost' || 
+                       window.location.hostname === '127.0.0.1' ||
+                       window.location.hostname === '';
+    
+    if (isLocalhost) {
+        document.getElementById('localDevNotice').style.display = 'block';
+    }
+});
+
 // Update server status when changed
 document.getElementById('serverUrl').addEventListener('change', function() {
     const status = document.getElementById('serverStatus');
     status.textContent = '🟡 Connecting...';
     
-    // Test connection
-    fetch(`${this.value}/metadata`, {
+    // Test connection with CORS proxy if local
+    const isLocalhost = window.location.hostname === 'localhost' || 
+                       window.location.hostname === '127.0.0.1' ||
+                       window.location.hostname === '';
+    
+    let testUrl = `${this.value}/metadata`;
+    if (isLocalhost) {
+        testUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(testUrl)}`;
+    }
+    
+    fetch(testUrl, {
         headers: { 'Accept': 'application/fhir+json' }
     })
     .then(response => {
