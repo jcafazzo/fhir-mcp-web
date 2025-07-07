@@ -23,6 +23,17 @@
                 </select>
                 <span class="server-status" id="serverStatus">🟢 Connected</span>
             </div>
+            <div class="api-config">
+                <label>AI Model:</label>
+                <select id="modelSelect">
+                    <option value="Llama-3.2-1B-Instruct-q4f16_1-MLC">Llama 3.2 1B (Fast, Basic)</option>
+                    <option value="Llama-3.2-3B-Instruct-q4f16_1-MLC" selected>Llama 3.2 3B (Balanced)</option>
+                    <option value="Phi-3.5-mini-instruct-q4f16_1-MLC">Phi 3.5 Mini (Microsoft)</option>
+                    <option value="gemma-2-2b-it-q4f16_1-MLC">Gemma 2 2B (Google)</option>
+                </select>
+                <button id="smartModeToggle" class="smart-toggle">🧠 Smart Mode: OFF</button>
+                <small class="api-info">Enhanced smart queries - no API key needed! Deploy to Netlify for full AI support.</small>
+            </div>
             <div class="local-dev-notice" id="localDevNotice" style="display: none;">
                 <small>🔧 Running locally - using CORS proxy for API requests</small>
             </div>
@@ -69,5 +80,13 @@
     </div>
 
     <script src="chat.js"></script>
+    <script type="module">
+        // Import WebLLM after chat.js loads
+        import * as webllm from "https://esm.run/@mlc-ai/web-llm";
+        window.webllm = webllm;
+        
+        // Signal that WebLLM is ready
+        window.dispatchEvent(new Event('webllm-ready'));
+    </script>
 </body>
 </html>

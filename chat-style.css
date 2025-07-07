@@ -72,6 +72,50 @@ h1 {
     margin-left: auto;
 }
 
+.api-config {
+    margin-top: 15px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    flex-wrap: wrap;
+}
+
+.api-config label {
+    font-weight: 500;
+}
+
+#modelSelect {
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    font-size: 14px;
+    width: 250px;
+    background: white;
+}
+
+.smart-toggle {
+    padding: 8px 16px;
+    background: #e9ecef;
+    border: 1px solid #ced4da;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.3s;
+}
+
+.smart-toggle.active {
+    background: #28a745;
+    color: white;
+    border-color: #28a745;
+}
+
+.api-info {
+    font-size: 13px;
+    color: #6c757d;
+    display: block;
+    width: 100%;
+}
+
 .local-dev-notice {
     margin-top: 10px;
     padding: 8px 12px;
