@@ -176,6 +176,28 @@ Or try queries like:
                 };
             }
             
+            // Handle patient information requests (more general)
+            if (lowerQuery.includes('more about') || lowerQuery.includes('tell me about') || 
+                lowerQuery.includes('information about') || lowerQuery.includes('details about')) {
+                // Extract patient name or ID
+                const nameMatch = query.match(/(?:about|on)\s+([a-zA-Z\s]+?)(?:\s*$|\s*\?)/i);
+                if (nameMatch) {
+                    const name = nameMatch[1].trim();
+                    const patients = await this.searchPatientsByName(name);
+                    
+                    if (patients.type === 'success' && patients.content.includes('ID:')) {
+                        // Extract first patient ID and get detailed info
+                        const idMatch = patients.content.match(/ID:\s+([a-zA-Z0-9-]+)/);
+                        if (idMatch) {
+                            const patientId = idMatch[1];
+                            return await this.getPatient(patientId);
+                        }
+                    }
+                    
+                    return patients;
+                }
+            }
+            
             // Handle clinical summary requests
             if (lowerQuery.includes('clinical summary') || lowerQuery.includes('summary')) {
                 // For ID-based summary requests
@@ -254,6 +276,49 @@ Or try queries like:
                     
                     return patients;
                 }
+            }
+            
+            // Check for any patient name mentioned in the query
+            const patientNamePattern = /(?:patient\s+)?([A-Z][a-z]+\s+[A-Z][a-z]+)/;
+            const patientNameMatch = query.match(patientNamePattern);
+            
+            if (patientNameMatch) {
+                const patientName = patientNameMatch[1];
+                
+                // Try to find this patient in the already displayed diabetes results first
+                const diabetesResults = document.querySelector('.message.assistant .message-content');
+                if (diabetesResults && diabetesResults.textContent.includes(patientName)) {
+                    // Extract the patient ID from the page
+                    const pageText = diabetesResults.textContent;
+                    const idPattern = new RegExp(`${patientName}.*?\\(ID:\\s*([a-zA-Z0-9-]+)\\)`, 'i');
+                    const pageIdMatch = pageText.match(idPattern);
+                    
+                    if (pageIdMatch) {
+                        const patientId = pageIdMatch[1];
+                        return await this.getPatient(patientId);
+                    }
+                }
+                
+                // Otherwise search for the patient
+                const patients = await this.searchPatientsByName(patientName);
+                
+                if (patients.type === 'success' && patients.content.includes('ID:')) {
+                    // Extract first patient ID and get detailed info
+                    const idMatch = patients.content.match(/ID:\s+([a-zA-Z0-9-]+)/);
+                    if (idMatch) {
+                        const patientId = idMatch[1];
+                        return await this.getPatient(patientId);
+                    }
+                }
+                
+                // If we found a patient name but no results, be helpful
+                return {
+                    type: 'info',
+                    content: `I understand you're asking about ${patientName}. Unfortunately, I couldn't find that specific patient in the current FHIR server. You can try:
+- "Show all patients" to see available patients
+- Use a patient ID directly if you have one
+- Try searching for diabetes patients with "find patients with diabetes"`
+                };
             }
             
             // Default to pattern matching for other queries
