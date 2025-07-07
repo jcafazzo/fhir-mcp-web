@@ -313,11 +313,22 @@ Or try queries like:
                 
                 // If we found a patient name but no results, be helpful
                 return {
-                    type: 'info',
-                    content: `I understand you're asking about ${patientName}. Unfortunately, I couldn't find that specific patient in the current FHIR server. You can try:
-- "Show all patients" to see available patients
-- Use a patient ID directly if you have one
-- Try searching for diabetes patients with "find patients with diabetes"`
+                    type: 'warning',
+                    content: `✅ Smart Mode recognized your request for information about "${patientName}"!
+
+However, this patient wasn't found in the current FHIR server. Try these options:
+
+📋 **Get available patients first:**
+- "Show all patients" 
+- "Find patients with diabetes"
+
+🎯 **Then use real patient names:**
+- "Give me a clinical summary for [actual patient name]"
+- "Show me more about [actual patient name]"
+
+💡 **Or try these working examples:**
+- "Show me diabetic patients over 65"
+- "What is the LLM you're using?"`
                 };
             }
             
