@@ -11,96 +11,24 @@ class FHIRChatBot {
     }
 
     async processQuery(query) {
-        // If smart mode is enabled and we have a loaded model, use WebLLM
-        if (this.smartMode && this.llmEngine) {
-            return await this.processQueryWithLLM(query);
-        }
-        
-        // Otherwise, use the pattern matching approach
-        const lowerQuery = query.toLowerCase();
-        
-        // Pattern matching for different query types
-        if (lowerQuery.includes('all patients') || lowerQuery === 'show patients') {
-            return await this.getAllPatients();
-        }
-        
-        if (lowerQuery.includes('patient') && lowerQuery.includes('diabetes')) {
-            return await this.findPatientsWithCondition('diabetes');
-        }
-        
-        if (lowerQuery.includes('get patient') || lowerQuery.includes('show patient')) {
-            const patientId = this.extractPatientId(query);
-            if (patientId) {
-                return await this.getPatient(patientId);
+        // If smart mode is enabled, use LLM processing with fallback handling
+        if (this.smartMode) {
+            const result = await this.processQueryWithLLM(query);
+            
+            // If the result indicates a fallback is needed, combine with enhanced local processing
+            if (result.fallback) {
+                const localResult = await this.processQueryWithEnhancedPatternMatching(query);
+                return {
+                    type: result.type,
+                    content: result.content + '\n\n' + localResult.content
+                };
             }
-            // If no ID found, try searching by name
-            const nameMatch = query.match(/(?:show|get)\s+patient\s+['""]?([a-zA-Z\s]+)['""]?/i);
-            if (nameMatch) {
-                const name = nameMatch[1].trim();
-                return await this.searchPatientsByName(name);
-            }
+            
+            return result;
         }
         
-        // Check for medication queries with patient ID
-        if ((lowerQuery.includes('med') || lowerQuery.includes('prescription') || lowerQuery.includes('drug')) && 
-            (lowerQuery.includes('for') || lowerQuery.includes('patient'))) {
-            const patientId = this.extractPatientId(query);
-            if (patientId) {
-                return await this.getMedicationsForPatient(patientId);
-            }
-            return await this.getMedications(query);
-        }
-        
-        if (lowerQuery.includes('observation') || lowerQuery.includes('lab') || lowerQuery.includes('vital')) {
-            return await this.getObservations(query);
-        }
-        
-        if (lowerQuery.includes('medication') || lowerQuery.includes('prescription')) {
-            return await this.getMedications(query);
-        }
-        
-        if (lowerQuery.includes('condition') || lowerQuery.includes('diagnos')) {
-            return await this.getConditions(query);
-        }
-        
-        if (lowerQuery.includes('data quality') || lowerQuery.includes('check quality')) {
-            return await this.assessDataQuality();
-        }
-        
-        if (lowerQuery.includes('care plan')) {
-            return await this.getCarePlans(query);
-        }
-        
-        // Check for date-based patient searches
-        if (lowerQuery.includes('born') || lowerQuery.includes('birth')) {
-            return await this.searchPatientsByDate(query);
-        }
-        
-        // Check for gender-based searches
-        if ((lowerQuery.includes('male') || lowerQuery.includes('female')) && lowerQuery.includes('patient')) {
-            return await this.searchPatientsByGender(query);
-        }
-        
-        // Check for age-based searches
-        if (lowerQuery.includes('age') || lowerQuery.includes('years old')) {
-            return await this.searchPatientsByAge(query);
-        }
-        
-        // Default response with better examples
-        return {
-            type: 'info',
-            content: `I'm not sure how to process that query. Try asking about:
-- **Patients**: "Show all patients", "Find patients born in 1967", "Show male patients"
-- **Conditions**: "Find patients with diabetes"
-- **Medications**: "Show meds for patient e312f2f5-689d-47f9-b4dd-f6f12417322f"
-- **Observations**: "Recent lab results", "Show observations for patient 123"
-- **Data Quality**: "Check data quality"
-
-Or try queries like:
-- "Find patients that were born in the latter half of 1967"
-- "Show female patients"
-- "Get conditions for patient [ID]"`
-        };
+        // Otherwise, use the enhanced pattern matching approach
+        return await this.processQueryWithEnhancedPatternMatching(query);
     }
 
     async processQueryWithLLM(query) {
@@ -191,15 +119,23 @@ Use your medical expertise to determine the most appropriate search strategy.`;
             }
 
             const data = await response.json();
-            const llmResponse = JSON.parse(data.choices[0].message.content);
+            const llmResponse = this.parseJsonResponse(data.choices[0].message.content);
 
             return await this.executeFHIROperations(llmResponse, query);
 
         } catch (error) {
             console.error('OpenAI processing error:', error);
+            
+            // Graceful degradation to enhanced local mode
+            console.log('Falling back to enhanced local intelligence...');
             return {
-                type: 'error',
-                content: `🚨 **OpenAI Error**: ${error.message}\n\nPlease check your API key and try again.`
+                type: 'warning',
+                content: `⚠️ **OpenAI Error - Using Local Intelligence**: ${error.message}
+
+Switching to enhanced local pattern matching with medical terminology analysis. For full AI reasoning, please check your API key and try again.
+
+**Enhanced Local Analysis:**`,
+                fallback: true
             };
         }
     }
@@ -261,26 +197,242 @@ Apply your medical knowledge to choose the most clinically relevant search strat
             }
 
             const data = await response.json();
-            const llmResponse = JSON.parse(data.content[0].text);
+            const llmResponse = this.parseJsonResponse(data.content[0].text);
 
             return await this.executeFHIROperations(llmResponse, query);
 
         } catch (error) {
             console.error('Claude processing error:', error);
+            
+            // Graceful degradation to enhanced local mode
+            console.log('Falling back to enhanced local intelligence...');
             return {
-                type: 'error',
-                content: `🚨 **Claude Error**: ${error.message}\n\nPlease check your API key and try again.`
+                type: 'warning',
+                content: `⚠️ **Claude Error - Using Local Intelligence**: ${error.message}
+
+Switching to enhanced local pattern matching with medical terminology analysis. For full AI reasoning, please check your API key and try again.
+
+**Enhanced Local Analysis:**`,
+                fallback: true
             };
         }
     }
 
     async processQueryWithLocalLLM(query) {
-        // Fallback to WebLLM if available, otherwise basic pattern matching
-        if (this.llmEngine) {
-            return await this.processQueryWithLLMWebLLM(query);
-        } else {
+        // Enhanced local intelligence without WebLLM dependency
+        // This provides FHIR-aware reasoning using medical terminology and patterns
+        return await this.processQueryWithEnhancedPatternMatching(query);
+    }
+
+    async processQueryWithEnhancedPatternMatching(query) {
+        try {
+            const lowerQuery = query.toLowerCase();
+            
+            // Medical terminology analysis for better understanding
+            const medicalTerms = {
+                diabetes: ['diabetes', 'diabetic', 'blood sugar', 'glucose', 'hba1c'],
+                hypertension: ['hypertension', 'high blood pressure', 'bp', 'blood pressure'],
+                cardiac: ['heart', 'cardiac', 'cardiovascular', 'chest pain', 'angina'],
+                respiratory: ['lung', 'respiratory', 'breathing', 'asthma', 'copd'],
+                medication: ['medication', 'drug', 'prescription', 'med', 'pill', 'tablet'],
+                lab: ['lab', 'laboratory', 'test', 'result', 'observation', 'vital'],
+                patient: ['patient', 'person', 'individual', 'subject']
+            };
+
+            // Analyze query intent using medical context
+            const queryAnalysis = this.analyzeQueryIntent(query, medicalTerms);
+            
+            // Generate appropriate FHIR operations based on analysis
+            const fhirOperations = this.generateFHIROperations(queryAnalysis, query);
+            
+            // Execute the operations
+            let results = [];
+            for (const operation of fhirOperations) {
+                try {
+                    let result;
+                    if (operation.operation === 'search') {
+                        result = await this.makeRequest(operation.resource, operation.parameters);
+                    } else if (operation.operation === 'read' && operation.parameters.id) {
+                        result = await this.makeRequest(`${operation.resource}/${operation.parameters.id}`);
+                    }
+                    
+                    if (result) {
+                        results.push({ operation, data: result });
+                    }
+                } catch (opError) {
+                    console.error(`Enhanced pattern matching operation error:`, opError);
+                }
+            }
+
+            // Format response with medical context
+            return this.formatEnhancedResponse(queryAnalysis, results, query);
+
+        } catch (error) {
+            console.error('Enhanced pattern matching error:', error);
+            // Fall back to basic pattern matching
             return await this.processQueryWithPatternMatching(query);
         }
+    }
+
+    analyzeQueryIntent(query, medicalTerms) {
+        const lowerQuery = query.toLowerCase();
+        const analysis = {
+            intent: 'unknown',
+            medicalContext: [],
+            resourceType: 'Patient',
+            parameters: {},
+            reasoning: ''
+        };
+
+        // Detect medical conditions
+        for (const [condition, terms] of Object.entries(medicalTerms)) {
+            if (terms.some(term => lowerQuery.includes(term))) {
+                analysis.medicalContext.push(condition);
+            }
+        }
+
+        // Determine primary intent
+        if (lowerQuery.includes('find') || lowerQuery.includes('search') || lowerQuery.includes('show')) {
+            analysis.intent = 'search';
+            
+            if (analysis.medicalContext.includes('diabetes')) {
+                analysis.resourceType = 'Condition';
+                analysis.parameters = { 'code:text': 'diabetes' };
+                analysis.reasoning = 'User is searching for patients with diabetes. This requires searching Condition resources.';
+            } else if (analysis.medicalContext.includes('medication')) {
+                analysis.resourceType = 'MedicationRequest';
+                analysis.parameters = { '_count': 10 };
+                analysis.reasoning = 'User is asking about medications. Searching MedicationRequest resources.';
+            } else if (analysis.medicalContext.includes('lab')) {
+                analysis.resourceType = 'Observation';
+                analysis.parameters = { '_count': 10, '_sort': '-date' };
+                analysis.reasoning = 'User is asking about lab results or observations. Searching recent Observation resources.';
+            } else {
+                analysis.resourceType = 'Patient';
+                analysis.parameters = { '_count': 10 };
+                analysis.reasoning = 'General patient search request. Retrieving patient list.';
+            }
+        } else if (lowerQuery.includes('clinical summary') || lowerQuery.includes('summary')) {
+            analysis.intent = 'summary';
+            analysis.resourceType = 'Patient';
+            analysis.reasoning = 'User wants a clinical summary. Will search for patient and gather related clinical data.';
+            
+            // Extract patient name if mentioned
+            const nameMatch = query.match(/(?:for|of)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i);
+            if (nameMatch) {
+                analysis.parameters = { 'name': nameMatch[1] };
+            }
+        } else if (lowerQuery.includes('all patients') || lowerQuery === 'patients') {
+            analysis.intent = 'list';
+            analysis.resourceType = 'Patient';
+            analysis.parameters = { '_count': 10 };
+            analysis.reasoning = 'User wants to see all patients. Retrieving patient list.';
+        }
+
+        return analysis;
+    }
+
+    generateFHIROperations(analysis, originalQuery) {
+        const operations = [];
+
+        if (analysis.intent === 'search' || analysis.intent === 'list') {
+            operations.push({
+                resource: analysis.resourceType,
+                operation: 'search',
+                parameters: analysis.parameters,
+                purpose: `Search ${analysis.resourceType} resources based on medical context`
+            });
+        } else if (analysis.intent === 'summary') {
+            // For summaries, search for patient first, then related data
+            operations.push({
+                resource: 'Patient',
+                operation: 'search',
+                parameters: analysis.parameters,
+                purpose: 'Find patient for clinical summary'
+            });
+        } else {
+            // Default to patient search
+            operations.push({
+                resource: 'Patient',
+                operation: 'search',
+                parameters: { '_count': 10 },
+                purpose: 'Default patient search'
+            });
+        }
+
+        return operations;
+    }
+
+    formatEnhancedResponse(analysis, results, originalQuery) {
+        if (results.length === 0) {
+            return {
+                type: 'warning',
+                content: `🔍 **Enhanced Analysis:** ${analysis.reasoning}
+
+The query "${originalQuery}" was processed using medical terminology analysis, but no matching data was found in the current FHIR server.
+
+**Medical Context Detected:** ${analysis.medicalContext.length > 0 ? analysis.medicalContext.join(', ') : 'General healthcare query'}`
+            };
+        }
+
+        let formattedContent = `🧠 **Enhanced Local Intelligence:** ${analysis.reasoning}\n\n`;
+        
+        if (analysis.medicalContext.length > 0) {
+            formattedContent += `**Medical Context:** ${analysis.medicalContext.join(', ')}\n\n`;
+        }
+
+        results.forEach((result, index) => {
+            const operation = result.operation;
+            const data = result.data;
+
+            formattedContent += `### ${operation.purpose}\n`;
+
+            if (data.entry && data.entry.length > 0) {
+                data.entry.forEach(entry => {
+                    const resource = entry.resource;
+                    
+                    if (resource.resourceType === 'Patient') {
+                        const name = this.formatName(resource.name);
+                        const id = resource.id;
+                        const birthDate = resource.birthDate ? new Date(resource.birthDate).toLocaleDateString() : 'Unknown';
+                        const gender = resource.gender || 'Unknown';
+                        
+                        formattedContent += `- **${name}** (ID: ${id})\n`;
+                        formattedContent += `  - Birth Date: ${birthDate}\n`;
+                        formattedContent += `  - Gender: ${gender}\n\n`;
+                    }
+                    else if (resource.resourceType === 'Condition') {
+                        const code = this.getCodeText(resource.code);
+                        const status = resource.clinicalStatus?.coding?.[0]?.code || 'Unknown';
+                        const date = resource.recordedDate ? new Date(resource.recordedDate).toLocaleDateString() : 'Unknown';
+                        
+                        formattedContent += `- **${code}** (Status: ${status}, Recorded: ${date})\n`;
+                    }
+                    else if (resource.resourceType === 'Observation') {
+                        const code = this.getCodeText(resource.code);
+                        const value = this.formatObservationValue(resource);
+                        const date = resource.effectiveDateTime ? new Date(resource.effectiveDateTime).toLocaleDateString() : 'Unknown';
+                        
+                        formattedContent += `- **${code}**: ${value} (${date})\n`;
+                    }
+                    else if (resource.resourceType === 'MedicationRequest') {
+                        const medication = resource.medicationCodeableConcept ? 
+                            this.getCodeText(resource.medicationCodeableConcept) : 'Unknown medication';
+                        const status = resource.status || 'Unknown';
+                        const date = resource.authoredOn ? new Date(resource.authoredOn).toLocaleDateString() : 'Unknown';
+                        
+                        formattedContent += `- **${medication}** (Status: ${status}, Prescribed: ${date})\n`;
+                    }
+                });
+            } else {
+                formattedContent += `No ${operation.resource.toLowerCase()} data found.\n\n`;
+            }
+        });
+
+        return {
+            type: 'success',
+            content: formattedContent
+        };
     }
 
     async executeFHIROperations(llmResponse, originalQuery) {
@@ -387,6 +539,61 @@ The query "${originalQuery}" was understood, but no matching data was found in t
             type: 'success',
             content: formattedContent
         };
+    }
+
+    parseJsonResponse(responseText) {
+        // Try multiple strategies to extract valid JSON from LLM response
+        try {
+            // Strategy 1: Direct parse (ideal case)
+            return JSON.parse(responseText);
+        } catch (e1) {
+            try {
+                // Strategy 2: Extract JSON between first { and last }
+                const firstBrace = responseText.indexOf('{');
+                const lastBrace = responseText.lastIndexOf('}');
+                if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+                    const jsonStr = responseText.substring(firstBrace, lastBrace + 1);
+                    return JSON.parse(jsonStr);
+                }
+            } catch (e2) {
+                try {
+                    // Strategy 3: Remove comments and extra text, then parse
+                    let cleaned = responseText
+                        .replace(/\/\/.*$/gm, '') // Remove line comments
+                        .replace(/\/\*[\s\S]*?\*\//g, '') // Remove block comments
+                        .replace(/^\s*[\w\s]*?\{/, '{') // Remove text before first {
+                        .replace(/\}\s*[\w\s]*?$/, '}'); // Remove text after last }
+                    
+                    return JSON.parse(cleaned);
+                } catch (e3) {
+                    // Strategy 4: Try to build a valid response from patterns
+                    const reasoning = this.extractTextAfter(responseText, ['reasoning', 'analysis', 'thinking']);
+                    const resource = this.extractTextAfter(responseText, ['resource', 'fhir', 'search']);
+                    
+                    return {
+                        reasoning: reasoning || "Unable to parse LLM reasoning, using fallback analysis",
+                        fhir_operations: [{
+                            resource: resource || "Patient",
+                            operation: "search",
+                            parameters: {},
+                            purpose: "Fallback operation due to parsing error"
+                        }],
+                        response_format: "Standard clinical format"
+                    };
+                }
+            }
+        }
+    }
+
+    extractTextAfter(text, keywords) {
+        for (const keyword of keywords) {
+            const regex = new RegExp(`${keyword}[:"']?\\s*(.+?)(?:\\n|$|[,}])`, 'i');
+            const match = text.match(regex);
+            if (match) {
+                return match[1].replace(/['"]/g, '').trim();
+            }
+        }
+        return null;
     }
     
     async processQueryWithLLMWebLLM(query) {
@@ -594,35 +801,82 @@ Note: Using enhanced pattern matching for local development. Deploy to Netlify f
     }
 
     async makeRequest(endpoint, params = {}) {
-        const targetUrl = new URL(`${this.currentServer}/${endpoint}`);
-        Object.keys(params).forEach(key => targetUrl.searchParams.append(key, params[key]));
-        
-        // Check if we're running locally and need CORS proxy
-        const isLocalhost = window.location.hostname === 'localhost' || 
-                           window.location.hostname === '127.0.0.1' ||
-                           window.location.hostname === '';
-        
-        if (isLocalhost) {
-            // Try multiple CORS proxies in order
-            const corsProxies = [
-                (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-                (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-                (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-                (url) => url // Direct attempt as last resort
-            ];
+        // If local mode is selected, return sample data
+        if (this.currentServer === 'local') {
+            return this.getLocalSampleData(endpoint, params);
+        }
+
+        // Try current server first, then failover servers
+        const servers = [
+            this.currentServer,
+            'https://r4.smarthealthit.org',
+            'https://hapi.fhir.org/baseR4',
+            'https://server.fire.ly'
+        ].filter((server, index, arr) => arr.indexOf(server) === index); // Remove duplicates
+
+        let lastError = null;
+
+        for (let serverIndex = 0; serverIndex < servers.length; serverIndex++) {
+            const server = servers[serverIndex];
+            const targetUrl = new URL(`${server}/${endpoint}`);
+            Object.keys(params).forEach(key => targetUrl.searchParams.append(key, params[key]));
             
-            for (let i = 0; i < corsProxies.length; i++) {
-                const proxyFunc = corsProxies[i];
-                const requestUrl = proxyFunc(targetUrl.toString());
+            // Check if we're running locally and need CORS proxy
+            const isLocalhost = window.location.hostname === 'localhost' || 
+                               window.location.hostname === '127.0.0.1' ||
+                               window.location.hostname === '';
+            
+            if (isLocalhost) {
+                // Try multiple CORS proxies for each server
+                const corsProxies = [
+                    (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+                    (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+                    (url) => url // Direct attempt
+                ];
                 
-                try {
-                    console.log(`Trying proxy ${i + 1}/${corsProxies.length}: ${requestUrl}`);
+                for (let proxyIndex = 0; proxyIndex < corsProxies.length; proxyIndex++) {
+                    const proxyFunc = corsProxies[proxyIndex];
+                    const requestUrl = proxyFunc(targetUrl.toString());
                     
-                    const response = await fetch(requestUrl, {
-                        headers: {
-                            'Accept': 'application/fhir+json',
-                            ...(i < corsProxies.length - 1 && { 'X-Requested-With': 'XMLHttpRequest' })
+                    try {
+                        console.log(`Trying server ${serverIndex + 1}/${servers.length}, proxy ${proxyIndex + 1}/${corsProxies.length}`);
+                        
+                        const response = await fetch(requestUrl, {
+                            headers: {
+                                'Accept': 'application/fhir+json',
+                                ...(proxyIndex < corsProxies.length - 1 && { 'X-Requested-With': 'XMLHttpRequest' })
+                            },
+                            timeout: 10000 // 10 second timeout
+                        });
+                        
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                         }
+                        
+                        const data = await response.json();
+                        console.log(`Success with server ${server}, proxy ${proxyIndex + 1}`);
+                        
+                        // Update status if we switched servers
+                        if (server !== this.currentServer) {
+                            this.updateServerStatus(`🟡 Switched to ${server.includes('smart') ? 'SMART' : server.includes('hapi') ? 'HAPI' : 'Firely'}`);
+                            this.currentServer = server;
+                        }
+                        
+                        return data;
+                        
+                    } catch (error) {
+                        console.log(`Server ${server}, proxy ${proxyIndex + 1} failed:`, error.message);
+                        lastError = error;
+                    }
+                }
+            } else {
+                // Direct request for production/Netlify
+                try {
+                    const response = await fetch(targetUrl, {
+                        headers: {
+                            'Accept': 'application/fhir+json'
+                        },
+                        timeout: 10000
                     });
                     
                     if (!response.ok) {
@@ -630,36 +884,131 @@ Note: Using enhanced pattern matching for local development. Deploy to Netlify f
                     }
                     
                     const data = await response.json();
-                    console.log(`Success with proxy ${i + 1}`);
+                    
+                    // Update status if we switched servers
+                    if (server !== this.currentServer) {
+                        this.updateServerStatus(`🟡 Switched to ${server.includes('smart') ? 'SMART' : server.includes('hapi') ? 'HAPI' : 'Firely'}`);
+                        this.currentServer = server;
+                    }
+                    
                     return data;
-                    
                 } catch (error) {
-                    console.log(`Proxy ${i + 1} failed:`, error.message);
-                    
-                    // If this is the last proxy, throw the error
-                    if (i === corsProxies.length - 1) {
-                        throw new Error(`All CORS proxies failed. Last error: ${error.message}. Try switching to a different FHIR server or running the demo on a hosted server.`);
-                    }
-                    // Otherwise, continue to next proxy
+                    console.log(`Server ${server} failed:`, error.message);
+                    lastError = error;
                 }
             }
+        }
+
+        // All servers failed, return local sample data as last resort
+        console.log('All FHIR servers failed, falling back to local sample data');
+        this.updateServerStatus('🔴 All servers failed - using sample data');
+        return this.getLocalSampleData(endpoint, params);
+    }
+
+    updateServerStatus(message) {
+        const statusElement = document.getElementById('serverStatus');
+        if (statusElement) {
+            statusElement.textContent = message;
+        }
+    }
+
+    getLocalSampleData(endpoint, params) {
+        // Return sample FHIR data for offline/local mode
+        const endpointLower = endpoint.toLowerCase();
+        
+        if (endpointLower.includes('patient')) {
+            return {
+                resourceType: "Bundle",
+                total: 3,
+                entry: [
+                    {
+                        resource: {
+                            resourceType: "Patient",
+                            id: "sample-patient-1",
+                            name: [{ family: "Doe", given: ["John"] }],
+                            gender: "male",
+                            birthDate: "1980-01-01"
+                        }
+                    },
+                    {
+                        resource: {
+                            resourceType: "Patient",
+                            id: "sample-patient-2", 
+                            name: [{ family: "Smith", given: ["Jane"] }],
+                            gender: "female",
+                            birthDate: "1975-06-15"
+                        }
+                    },
+                    {
+                        resource: {
+                            resourceType: "Patient",
+                            id: "sample-patient-3",
+                            name: [{ family: "Johnson", given: ["Bob"] }],
+                            gender: "male",
+                            birthDate: "1990-12-25"
+                        }
+                    }
+                ]
+            };
+        } else if (endpointLower.includes('condition')) {
+            return {
+                resourceType: "Bundle",
+                total: 2,
+                entry: [
+                    {
+                        resource: {
+                            resourceType: "Condition",
+                            id: "sample-condition-1",
+                            code: { 
+                                coding: [{ code: "44054006", display: "Diabetes mellitus type 2" }],
+                                text: "Type 2 Diabetes"
+                            },
+                            subject: { reference: "Patient/sample-patient-1" },
+                            clinicalStatus: { coding: [{ code: "active" }] }
+                        }
+                    },
+                    {
+                        resource: {
+                            resourceType: "Condition", 
+                            id: "sample-condition-2",
+                            code: {
+                                coding: [{ code: "38341003", display: "Hypertension" }],
+                                text: "High Blood Pressure"
+                            },
+                            subject: { reference: "Patient/sample-patient-2" },
+                            clinicalStatus: { coding: [{ code: "active" }] }
+                        }
+                    }
+                ]
+            };
+        } else if (endpointLower.includes('observation')) {
+            return {
+                resourceType: "Bundle",
+                total: 1,
+                entry: [
+                    {
+                        resource: {
+                            resourceType: "Observation",
+                            id: "sample-observation-1",
+                            code: {
+                                coding: [{ code: "33747-0", display: "Glucose" }],
+                                text: "Blood Glucose"
+                            },
+                            subject: { reference: "Patient/sample-patient-1" },
+                            valueQuantity: { value: 120, unit: "mg/dL" },
+                            effectiveDateTime: new Date().toISOString(),
+                            status: "final"
+                        }
+                    }
+                ]
+            };
         } else {
-            // Direct request for production/Netlify
-            try {
-                const response = await fetch(targetUrl, {
-                    headers: {
-                        'Accept': 'application/fhir+json'
-                    }
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-                
-                return await response.json();
-            } catch (error) {
-                throw error;
-            }
+            // Default empty bundle
+            return {
+                resourceType: "Bundle",
+                total: 0,
+                entry: []
+            };
         }
     }
 
@@ -1646,6 +1995,14 @@ window.addEventListener('DOMContentLoaded', function() {
     
     if (isLocalhost) {
         document.getElementById('localDevNotice').style.display = 'block';
+        
+        // Add development notification after a delay
+        setTimeout(() => {
+            const existingChatBot = window.chatBot;
+            if (existingChatBot) {
+                addMessage('assistant', '🛠️ **Development Mode Active**\n\n✅ **Enhanced Local Features:**\n- Automatic FHIR server failover\n- Robust offline capabilities\n- Smart error handling & recovery\n- Enhanced medical terminology analysis\n\n💡 **Pro Tip**: Switch to "Local Sample Data" for 100% offline testing!', 'info');
+            }
+        }, 2000);
     }
     
     // Smart mode toggle functionality

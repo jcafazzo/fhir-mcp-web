@@ -17,9 +17,10 @@
             <div class="server-select">
                 <label>FHIR Server:</label>
                 <select id="serverUrl">
-                    <option value="https://hapi.fhir.org/baseR4">HAPI Test Server</option>
-                    <option value="https://server.fire.ly">Firely Server</option>
-                    <option value="https://r4.smarthealthit.org" selected>SMART Health IT</option>
+                    <option value="https://r4.smarthealthit.org" selected>SMART Health IT (Primary)</option>
+                    <option value="https://hapi.fhir.org/baseR4">HAPI Test Server (Backup)</option>
+                    <option value="https://server.fire.ly">Firely Server (Backup)</option>
+                    <option value="local">Local Sample Data (Offline)</option>
                 </select>
                 <span class="server-status" id="serverStatus">🟢 Connected</span>
             </div>
@@ -50,15 +51,23 @@
                 <div class="message assistant">
                     <div class="message-header">🤖 FHIR Assistant</div>
                     <div class="message-content">
-                        Hi! I can help you query FHIR servers. Try asking me things like:
+                        Hi! I can help you query FHIR servers using natural language. 
+                        
+                        **🚀 Quick Start:**
+                        - **No Setup Required**: Works offline with sample data
+                        - **Smart Mode**: Enable for enhanced medical reasoning
+                        - **Cloud AI**: Add API keys for GPT-4/Claude intelligence
+                        
+                        **Try asking:**
                         <ul>
                             <li>"Show me all patients"</li>
                             <li>"Find patients with diabetes"</li>
-                            <li>"Get patient 87a339d0-8cae-418e-89c7-8651e6aab3c6"</li>
-                            <li>"Show me recent observations"</li>
-                            <li>"Find medications for patient X"</li>
-                            <li>"Check the data quality of this server"</li>
+                            <li>"Give me a clinical summary for John Doe"</li>
+                            <li>"Show recent lab results"</li>
+                            <li>"What medications are prescribed?"</li>
                         </ul>
+                        
+                        **💡 Tip**: Switch to "Local Sample Data" for guaranteed offline functionality!
                     </div>
                 </div>
             </div>
