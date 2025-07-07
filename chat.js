@@ -105,240 +105,288 @@ Or try queries like:
 
     async processQueryWithLLM(query) {
         try {
-            // For now, use a rule-based system that simulates LLM understanding
-            // This avoids CORS issues while still providing intelligent responses
-            
-            const lowerQuery = query.toLowerCase();
-            
-            // Handle complex queries with multiple conditions
-            if ((lowerQuery.includes('diabetic') || lowerQuery.includes('diabetes')) && 
-                (lowerQuery.includes('over') || lowerQuery.includes('above') || lowerQuery.includes('older'))) {
-                const ageMatch = query.match(/(\d+)/);
-                const age = ageMatch ? parseInt(ageMatch[1]) : 65;
-                
-                // First get patients with diabetes
-                const conditionResult = await this.findPatientsWithCondition('diabetes');
-                if (conditionResult.type === 'error' || conditionResult.type === 'warning') {
-                    return conditionResult;
-                }
-                
-                // Extract patient IDs from the result
-                const patientIds = [];
-                const lines = conditionResult.content.split('\n');
-                lines.forEach(line => {
-                    const idMatch = line.match(/Patient\s+([a-zA-Z0-9-]+)/);
-                    if (idMatch) {
-                        patientIds.push(idMatch[1]);
-                    }
-                });
-                
-                // Get details for each patient and filter by age
-                let filteredContent = `Found diabetic patients over ${age}:\n\n`;
-                let count = 0;
-                
-                for (const patientId of patientIds.slice(0, 10)) { // Limit to 10 for performance
-                    try {
-                        const patient = await this.makeRequest(`Patient/${patientId}`);
-                        if (patient.birthDate) {
-                            const birthYear = new Date(patient.birthDate).getFullYear();
-                            const patientAge = new Date().getFullYear() - birthYear;
-                            
-                            if (patientAge > age) {
-                                count++;
-                                const name = this.formatName(patient.name);
-                                filteredContent += `${count}. **${name}** (ID: ${patient.id})\n`;
-                                filteredContent += `   Age: ${patientAge}, Gender: ${patient.gender || 'Unknown'}\n\n`;
-                            }
-                        }
-                    } catch (e) {
-                        // Skip patients we can't fetch
-                    }
-                }
-                
-                if (count === 0) {
-                    return {
-                        type: 'info',
-                        content: `No diabetic patients over ${age} found in the current dataset.`
-                    };
-                }
-                
+            // Get current provider selection
+            const provider = document.getElementById('providerSelect').value;
+            const apiKey = document.getElementById('apiKey').value;
+
+            // Route to appropriate LLM provider
+            if (provider === 'openai' && apiKey) {
+                return await this.processQueryWithOpenAI(query, apiKey);
+            } else if (provider === 'claude' && apiKey) {
+                return await this.processQueryWithClaude(query, apiKey);
+            } else if (provider === 'local') {
+                return await this.processQueryWithLocalLLM(query);
+            } else {
                 return {
-                    type: 'success',
-                    content: filteredContent
+                    type: 'error',
+                    content: `🔑 **API Key Required**
+
+To use ${provider === 'openai' ? 'OpenAI GPT-4' : 'Claude 3.5 Sonnet'} for true AI reasoning, please:
+
+1. Enter your API key in the field above
+2. Try your query again
+
+**Why use cloud AI?** These models have extensive medical knowledge (54-73% accuracy on medical tasks) unlike local models (17-30% accuracy).
+
+**Alternative:** Switch to "Local Models" for basic pattern matching without API keys.`
                 };
             }
-            
-            // Handle meta questions about the system
-            if (lowerQuery.includes('llm') || lowerQuery.includes('model') || lowerQuery.includes('ai')) {
-                return {
-                    type: 'info',
-                    content: 'I\'m using an enhanced pattern matching system that simulates AI understanding. While WebLLM integration is available, it requires downloading large models which can be blocked by CORS in local development. Deploy to Netlify for full WebLLM support!'
-                };
-            }
-            
-            // Handle patient information requests (more general)
-            if (lowerQuery.includes('more about') || lowerQuery.includes('tell me about') || 
-                lowerQuery.includes('information about') || lowerQuery.includes('details about')) {
-                // Extract patient name or ID
-                const nameMatch = query.match(/(?:about|on)\s+([a-zA-Z\s]+?)(?:\s*$|\s*\?)/i);
-                if (nameMatch) {
-                    const name = nameMatch[1].trim();
-                    const patients = await this.searchPatientsByName(name);
-                    
-                    if (patients.type === 'success' && patients.content.includes('ID:')) {
-                        // Extract first patient ID and get detailed info
-                        const idMatch = patients.content.match(/ID:\s+([a-zA-Z0-9-]+)/);
-                        if (idMatch) {
-                            const patientId = idMatch[1];
-                            return await this.getPatient(patientId);
-                        }
-                    }
-                    
-                    return patients;
-                }
-            }
-            
-            // Handle clinical summary requests
-            if (lowerQuery.includes('clinical summary') || lowerQuery.includes('summary')) {
-                // For ID-based summary requests
-                const idMatch = query.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
-                if (idMatch) {
-                    const patientId = idMatch[0];
-                    const patientData = await this.getPatient(patientId);
-                    
-                    // Format as clinical summary
-                    let summary = `## Clinical Summary\n\n${patientData.content}\n\n`;
-                    
-                    // Add recent observations
-                    try {
-                        const obs = await this.makeRequest('Observation', { patient: patientId, _count: 5, _sort: '-date' });
-                        if (obs.entry && obs.entry.length > 0) {
-                            summary += `### Recent Observations\n`;
-                            obs.entry.forEach(entry => {
-                                const observation = entry.resource;
-                                const code = this.getCodeText(observation.code);
-                                const value = this.formatObservationValue(observation);
-                                const date = observation.effectiveDateTime || observation.issued;
-                                summary += `- **${code}**: ${value}${date ? ` (${new Date(date).toLocaleDateString()})` : ''}\n`;
-                            });
-                        }
-                    } catch (e) {
-                        // Continue without observations
-                    }
-                    
-                    return {
-                        type: 'success',
-                        content: summary
-                    };
-                }
-                
-                // For name-based summary requests
-                const nameMatch = query.match(/(?:of|for)\s+([a-zA-Z\s]+?)(?:\s*$|\s*\?)/i);
-                if (nameMatch) {
-                    const name = nameMatch[1].trim();
-                    const patients = await this.searchPatientsByName(name);
-                    
-                    if (patients.type === 'success' && patients.content.includes('ID:')) {
-                        // Extract first patient ID
-                        const idMatch = patients.content.match(/ID:\s+([a-zA-Z0-9-]+)/);
-                        if (idMatch) {
-                            const patientId = idMatch[1];
-                            
-                            // Get comprehensive patient data
-                            const patientData = await this.getPatient(patientId);
-                            
-                            // Format as clinical summary
-                            let summary = `## Clinical Summary\n\n${patientData.content}\n\n`;
-                            
-                            // Add recent observations
-                            try {
-                                const obs = await this.makeRequest('Observation', { patient: patientId, _count: 5, _sort: '-date' });
-                                if (obs.entry && obs.entry.length > 0) {
-                                    summary += `### Recent Observations\n`;
-                                    obs.entry.forEach(entry => {
-                                        const observation = entry.resource;
-                                        const code = this.getCodeText(observation.code);
-                                        const value = this.formatObservationValue(observation);
-                                        const date = observation.effectiveDateTime || observation.issued;
-                                        summary += `- **${code}**: ${value}${date ? ` (${new Date(date).toLocaleDateString()})` : ''}\n`;
-                                    });
-                                }
-                            } catch (e) {
-                                // Continue without observations
-                            }
-                            
-                            return {
-                                type: 'success',
-                                content: summary
-                            };
-                        }
-                    }
-                    
-                    return patients;
-                }
-            }
-            
-            // Check for any patient name mentioned in the query
-            const patientNamePattern = /(?:patient\s+)?([A-Z][a-z]+\s+[A-Z][a-z]+)/;
-            const patientNameMatch = query.match(patientNamePattern);
-            
-            if (patientNameMatch) {
-                const patientName = patientNameMatch[1];
-                
-                // Try to find this patient in the already displayed diabetes results first
-                const diabetesResults = document.querySelector('.message.assistant .message-content');
-                if (diabetesResults && diabetesResults.textContent.includes(patientName)) {
-                    // Extract the patient ID from the page
-                    const pageText = diabetesResults.textContent;
-                    const idPattern = new RegExp(`${patientName}.*?\\(ID:\\s*([a-zA-Z0-9-]+)\\)`, 'i');
-                    const pageIdMatch = pageText.match(idPattern);
-                    
-                    if (pageIdMatch) {
-                        const patientId = pageIdMatch[1];
-                        return await this.getPatient(patientId);
-                    }
-                }
-                
-                // Otherwise search for the patient
-                const patients = await this.searchPatientsByName(patientName);
-                
-                if (patients.type === 'success' && patients.content.includes('ID:')) {
-                    // Extract first patient ID and get detailed info
-                    const idMatch = patients.content.match(/ID:\s+([a-zA-Z0-9-]+)/);
-                    if (idMatch) {
-                        const patientId = idMatch[1];
-                        return await this.getPatient(patientId);
-                    }
-                }
-                
-                // If we found a patient name but no results, be helpful
-                return {
-                    type: 'warning',
-                    content: `✅ Smart Mode recognized your request for information about "${patientName}"!
-
-However, this patient wasn't found in the current FHIR server. Try these options:
-
-📋 **Get available patients first:**
-- "Show all patients" 
-- "Find patients with diabetes"
-
-🎯 **Then use real patient names:**
-- "Give me a clinical summary for [actual patient name]"
-- "Show me more about [actual patient name]"
-
-💡 **Or try these working examples:**
-- "Show me diabetic patients over 65"
-- "What is the LLM you're using?"`
-                };
-            }
-            
-            // Default to pattern matching for other queries
-            return await this.processQueryWithPatternMatching(query);
-            
         } catch (error) {
-            console.error('Smart query processing error:', error);
+            console.error('LLM routing error:', error);
+            return await this.processQueryWithLocalLLM(query);
+        }
+    }
+
+    async processQueryWithOpenAI(query, apiKey) {
+        try {
+            const systemPrompt = `You are a FHIR (Fast Healthcare Interoperability Resources) expert assistant. You have deep knowledge of healthcare data standards, medical terminology, and clinical workflows.
+
+Given a natural language query about healthcare data, analyze it using your medical knowledge and reasoning to determine the appropriate FHIR API calls needed.
+
+Available FHIR resources and operations:
+- Patient: Find patients by name, ID, demographics
+- Condition: Search for medical conditions/diagnoses
+- Observation: Lab results, vital signs, measurements
+- MedicationRequest: Prescriptions and medications
+- DiagnosticReport: Lab reports and diagnostic tests
+- CarePlan: Treatment plans and care coordination
+
+Respond with a JSON object containing:
+{
+    "reasoning": "Your clinical reasoning about what the user is asking for",
+    "fhir_operations": [
+        {
+            "resource": "Patient|Condition|Observation|MedicationRequest|DiagnosticReport|CarePlan",
+            "operation": "search|read",
+            "parameters": {
+                // FHIR search parameters based on your medical knowledge
+            },
+            "purpose": "Why this operation is needed"
+        }
+    ],
+    "response_format": "How to present the data to the user"
+}
+
+Use your medical expertise to determine the most appropriate search strategy.`;
+
+            const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`
+                },
+                body: JSON.stringify({
+                    model: 'gpt-4',
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: query }
+                    ],
+                    temperature: 0.1,
+                    max_tokens: 1000
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`OpenAI API error: ${response.status}`);
+            }
+
+            const data = await response.json();
+            const llmResponse = JSON.parse(data.choices[0].message.content);
+
+            return await this.executeFHIROperations(llmResponse, query);
+
+        } catch (error) {
+            console.error('OpenAI processing error:', error);
+            return {
+                type: 'error',
+                content: `🚨 **OpenAI Error**: ${error.message}\n\nPlease check your API key and try again.`
+            };
+        }
+    }
+
+    async processQueryWithClaude(query, apiKey) {
+        try {
+            const systemPrompt = `You are a FHIR (Fast Healthcare Interoperability Resources) expert assistant with extensive medical knowledge. You understand clinical workflows, medical terminology, and healthcare data standards.
+
+Analyze the user's natural language query using your medical expertise to determine the appropriate FHIR API operations.
+
+Available FHIR resources:
+- Patient: Demographics, identifiers, contact info
+- Condition: Diagnoses, problems, health concerns  
+- Observation: Lab values, vital signs, measurements
+- MedicationRequest: Prescriptions, drug therapy
+- DiagnosticReport: Lab reports, imaging results
+- CarePlan: Treatment plans, care coordination
+
+Respond with JSON:
+{
+    "reasoning": "Your clinical analysis of what the user needs",
+    "fhir_operations": [
+        {
+            "resource": "Resource type",
+            "operation": "search or read",
+            "parameters": {
+                // FHIR search parameters
+            },
+            "purpose": "Clinical justification"
+        }
+    ],
+    "response_format": "How to present results clinically"
+}
+
+Apply your medical knowledge to choose the most clinically relevant search strategy.`;
+
+            const response = await fetch('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': apiKey,
+                    'anthropic-version': '2023-06-01'
+                },
+                body: JSON.stringify({
+                    model: 'claude-3-5-sonnet-20241022',
+                    max_tokens: 1000,
+                    messages: [
+                        {
+                            role: 'user',
+                            content: `${systemPrompt}\n\nUser query: ${query}`
+                        }
+                    ],
+                    temperature: 0.1
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Claude API error: ${response.status}`);
+            }
+
+            const data = await response.json();
+            const llmResponse = JSON.parse(data.content[0].text);
+
+            return await this.executeFHIROperations(llmResponse, query);
+
+        } catch (error) {
+            console.error('Claude processing error:', error);
+            return {
+                type: 'error',
+                content: `🚨 **Claude Error**: ${error.message}\n\nPlease check your API key and try again.`
+            };
+        }
+    }
+
+    async processQueryWithLocalLLM(query) {
+        // Fallback to WebLLM if available, otherwise basic pattern matching
+        if (this.llmEngine) {
+            return await this.processQueryWithLLMWebLLM(query);
+        } else {
             return await this.processQueryWithPatternMatching(query);
         }
+    }
+
+    async executeFHIROperations(llmResponse, originalQuery) {
+        try {
+            let results = [];
+            
+            // Execute each FHIR operation recommended by the LLM
+            for (const operation of llmResponse.fhir_operations) {
+                try {
+                    let result;
+                    
+                    if (operation.operation === 'search') {
+                        result = await this.makeRequest(operation.resource, operation.parameters);
+                    } else if (operation.operation === 'read' && operation.parameters.id) {
+                        result = await this.makeRequest(`${operation.resource}/${operation.parameters.id}`);
+                    }
+                    
+                    if (result) {
+                        results.push({
+                            operation: operation,
+                            data: result
+                        });
+                    }
+                } catch (opError) {
+                    console.error(`FHIR operation error:`, opError);
+                }
+            }
+
+            // Format response using LLM's guidance
+            return this.formatLLMResponse(llmResponse, results, originalQuery);
+
+        } catch (error) {
+            console.error('FHIR operations execution error:', error);
+            return {
+                type: 'error',
+                content: `🚨 **Execution Error**: ${error.message}`
+            };
+        }
+    }
+
+    formatLLMResponse(llmResponse, results, originalQuery) {
+        if (results.length === 0) {
+            return {
+                type: 'warning',
+                content: `🤔 **No Results Found**
+
+**LLM Reasoning:** ${llmResponse.reasoning}
+
+The query "${originalQuery}" was understood, but no matching data was found in the current FHIR server.`
+            };
+        }
+
+        let formattedContent = `🧠 **AI Analysis:** ${llmResponse.reasoning}\n\n`;
+
+        results.forEach((result, index) => {
+            const operation = result.operation;
+            const data = result.data;
+
+            formattedContent += `### ${operation.purpose}\n`;
+
+            if (data.entry && data.entry.length > 0) {
+                data.entry.forEach(entry => {
+                    const resource = entry.resource;
+                    
+                    if (resource.resourceType === 'Patient') {
+                        const name = this.formatName(resource.name);
+                        const id = resource.id;
+                        const birthDate = resource.birthDate ? new Date(resource.birthDate).toLocaleDateString() : 'Unknown';
+                        const gender = resource.gender || 'Unknown';
+                        
+                        formattedContent += `- **${name}** (ID: ${id})\n`;
+                        formattedContent += `  - Birth Date: ${birthDate}\n`;
+                        formattedContent += `  - Gender: ${gender}\n\n`;
+                    }
+                    else if (resource.resourceType === 'Condition') {
+                        const code = this.getCodeText(resource.code);
+                        const status = resource.clinicalStatus?.coding?.[0]?.code || 'Unknown';
+                        const date = resource.recordedDate ? new Date(resource.recordedDate).toLocaleDateString() : 'Unknown';
+                        
+                        formattedContent += `- **${code}** (Status: ${status}, Recorded: ${date})\n`;
+                    }
+                    else if (resource.resourceType === 'Observation') {
+                        const code = this.getCodeText(resource.code);
+                        const value = this.formatObservationValue(resource);
+                        const date = resource.effectiveDateTime ? new Date(resource.effectiveDateTime).toLocaleDateString() : 'Unknown';
+                        
+                        formattedContent += `- **${code}**: ${value} (${date})\n`;
+                    }
+                    else if (resource.resourceType === 'MedicationRequest') {
+                        const medication = resource.medicationCodeableConcept ? 
+                            this.getCodeText(resource.medicationCodeableConcept) : 'Unknown medication';
+                        const status = resource.status || 'Unknown';
+                        const date = resource.authoredOn ? new Date(resource.authoredOn).toLocaleDateString() : 'Unknown';
+                        
+                        formattedContent += `- **${medication}** (Status: ${status}, Prescribed: ${date})\n`;
+                    }
+                });
+            } else {
+                formattedContent += `No ${operation.resource.toLowerCase()} data found.\n\n`;
+            }
+        });
+
+        return {
+            type: 'success',
+            content: formattedContent
+        };
     }
     
     async processQueryWithLLMWebLLM(query) {
@@ -1662,6 +1710,44 @@ window.addEventListener('DOMContentLoaded', function() {
     modelSelect.addEventListener('change', function() {
         if (chatBot.smartMode && chatBot.currentModel !== this.value) {
             addMessage('assistant', 'Please turn off Smart Mode and turn it back on to load the new model.');
+        }
+    });
+    
+    // Provider selection handler
+    const providerSelect = document.getElementById('providerSelect');
+    const apiKeyField = document.getElementById('apiKey');
+    const modelSelectField = document.getElementById('modelSelect');
+    const providerInfo = document.getElementById('providerInfo');
+    
+    providerSelect.addEventListener('change', function() {
+        const provider = this.value;
+        
+        if (provider === 'openai') {
+            apiKeyField.style.display = 'block';
+            apiKeyField.placeholder = 'Enter OpenAI API key...';
+            modelSelectField.style.display = 'none';
+            providerInfo.textContent = 'GPT-4 with extensive medical knowledge - requires API key';
+        } else if (provider === 'claude') {
+            apiKeyField.style.display = 'block';
+            apiKeyField.placeholder = 'Enter Claude API key...';
+            modelSelectField.style.display = 'none';
+            providerInfo.textContent = 'Claude 3.5 Sonnet with superior reasoning - requires API key';
+        } else if (provider === 'local') {
+            apiKeyField.style.display = 'none';
+            modelSelectField.style.display = 'block';
+            providerInfo.textContent = 'Local AI models with FHIR context - no API key needed!';
+        }
+        
+        // Reset Smart Mode if it's active when changing providers
+        if (chatBot.smartMode) {
+            const smartModeToggle = document.getElementById('smartModeToggle');
+            smartModeToggle.classList.remove('active');
+            smartModeToggle.textContent = '🧠 Smart Mode: OFF';
+            chatBot.smartMode = false;
+            chatBot.llmEngine = null;
+            chatBot.currentModel = null;
+            
+            addMessage('assistant', `Provider changed to ${provider}. Smart Mode has been reset. Please configure your settings and re-enable Smart Mode.`);
         }
     });
     

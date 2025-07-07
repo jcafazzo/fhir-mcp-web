@@ -1,0 +1,24 @@
+{
+  "name": "web-demo",
+  "version": "1.0.0",
+  "description": "A natural language chat interface for querying FHIR servers. Ask questions about patients, conditions, medications, and more - just like chatting with an AI assistant!",
+  "main": "chat.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jcafazzo/fhir-mcp-web.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/jcafazzo/fhir-mcp-web/issues"
+  },
+  "homepage": "https://github.com/jcafazzo/fhir-mcp-web#readme",
+  "dependencies": {
+    "puppeteer": "^24.12.0"
+  }
+}
